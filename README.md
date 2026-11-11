@@ -15,6 +15,7 @@ Ngoài chức năng giám sát, người dùng còn có thể gửi lệnh từ 
 Dự án được xây dựng và kiểm thử trên môi trường mô phỏng **Wokwi**, kết hợp với giao diện website chạy trên trình duyệt.
 
 Link wokwi: https://wokwi.com/projects/480269981900002305.
+
 Link web: https://nhatnguyen0201.github.io/Lap3_aquarium_esp32/web/index.html.
 
 ## 🎯 2. Mục tiêu dự án
