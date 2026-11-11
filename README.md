@@ -349,11 +349,13 @@ Có thể bổ sung ảnh chụp màn hình mô phỏng tại các vị trí sau
 ## 📁 10. Cấu trúc thư mục dự án
 
 ```text
-Smart-Aquarium-IoT/
+Lap3_aquarium_esp32/
 │
-├── ESP32/
-│   ├── Aquarium_ESP32.ino
-│   └── diagram.json
+├── firmware/
+│   ├── diagram.json
+│   └── libraries.txt
+    └── main.c
+    └── wokwi-project.txt
 │
 ├── Web/
 │   └── index.html
@@ -361,12 +363,10 @@ Smart-Aquarium-IoT/
 ├── README.md
 │
 └── docs/
-    ├── images/
-    │   ├── wokwi-circuit.png
-    │   ├── serial-monitor.png
-    │   └── dashboard.png
-    │
-    └── report.pdf
+    └── Baocao_lap3quarium_esp32.docx
+│
+└── video/
+    └── videodemo
 ```
 
 *Cấu trúc trên là cấu trúc đề xuất. Có thể điều chỉnh tên thư mục và file cho phù hợp với repository thực tế.*
