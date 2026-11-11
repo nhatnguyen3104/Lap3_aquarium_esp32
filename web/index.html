@@ -1,0 +1,1395 @@
+<!DOCTYPE html>
+<html lang="vi" class="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AquaSense Pro - Hệ Thống Giám Sát & Điều Khiển Bể Thủy Hải Sản IoT</title>
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            ocean: {
+              950: '#030b17',
+              900: '#07162c',
+              850: '#0a1e3b',
+              800: '#0f294a',
+              700: '#153966',
+              600: '#1b4d8a',
+              500: '#2563eb',
+              400: '#38bdf8',
+              300: '#7dd3fc',
+              200: '#bae6fd',
+            },
+            cyanGlow: '#00f2fe',
+            emeraldGlow: '#10b981',
+          },
+          animation: {
+            'wave-slow': 'wave 6s cubic-bezier(0.36, 0.45, 0.63, 0.53) infinite',
+            'wave-fast': 'wave 3.5s cubic-bezier(0.36, 0.45, 0.63, 0.53) -1.5s infinite',
+            'bubble-rise-1': 'rise 3.2s ease-in infinite',
+            'bubble-rise-2': 'rise 4.1s ease-in infinite 1s',
+            'bubble-rise-3': 'rise 2.8s ease-in infinite 0.5s',
+            'pulse-subtle': 'pulseSubtle 2.5s ease-in-out infinite',
+          },
+          keyframes: {
+            wave: {
+              '0%, 100%': { transform: 'translateX(0)' },
+              '50%': { transform: 'translateX(-25%)' },
+            },
+            rise: {
+              '0%': { transform: 'translateY(100%) scale(0.6)', opacity: '0' },
+              '30%': { opacity: '0.85' },
+              '90%': { opacity: '0.9' },
+              '100%': { transform: 'translateY(-120px) scale(1.15)', opacity: '0' },
+            },
+            pulseSubtle: {
+              '0%, 100%': { opacity: '1', transform: 'scale(1)' },
+              '50%': { opacity: '0.85', transform: 'scale(0.99)' },
+            }
+          }
+        }
+      }
+    }
+  </script>
+  <!-- Chart.js -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <!-- MQTT.js CDN -->
+  <script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
+  <!-- Phosphor Icons -->
+  <script src="https://unpkg.com/@phosphor-icons/web"></script>
+  <style>
+    /* Custom Scrollbar */
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-track { background: #07162c; }
+    ::-webkit-scrollbar-thumb { background: #1b4d8a; border-radius: 4px; }
+    ::-webkit-scrollbar-thumb:hover { background: #38bdf8; }
+
+    .glass-panel {
+      background: rgba(10, 30, 59, 0.7);
+      backdrop-filter: blur(14px);
+      -webkit-backdrop-filter: blur(14px);
+      border: 1px solid rgba(56, 189, 248, 0.12);
+      box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.45);
+    }
+    .glass-card-hover {
+      transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+    .glass-card-hover:hover {
+      border-color: rgba(56, 189, 248, 0.35);
+      transform: translateY(-2px);
+      box-shadow: 0 12px 36px 0 rgba(0, 242, 254, 0.12);
+    }
+
+    /* Wave effect in Visual Tank */
+    .wave-svg {
+      position: absolute;
+      top: -24px;
+      left: 0;
+      width: 200%;
+      height: 28px;
+    }
+    .wave-layer-1 {
+      fill: rgba(14, 165, 233, 0.4);
+      animation: wave 7s ease-in-out infinite alternate;
+    }
+    .wave-layer-2 {
+      fill: rgba(2, 132, 199, 0.75);
+      animation: wave 4s ease-in-out infinite alternate -2s;
+    }
+
+    @keyframes wave {
+      0% { transform: translateX(0); }
+      100% { transform: translateX(-40%); }
+    }
+
+    /* Neon LED glow indicators */
+    .led-glow-green {
+      box-shadow: 0 0 12px #10b981, inset 0 0 4px #a7f3d0;
+    }
+    .led-glow-amber {
+      box-shadow: 0 0 12px #f59e0b, inset 0 0 4px #fde68a;
+    }
+    .led-glow-red {
+      box-shadow: 0 0 12px #ef4444, inset 0 0 4px #fca5a5;
+    }
+    .led-glow-blue {
+      box-shadow: 0 0 14px #38bdf8, inset 0 0 4px #bae6fd;
+    }
+  </style>
+</head>
+<body class="bg-ocean-950 text-slate-100 min-h-screen font-sans selection:bg-cyan-500 selection:text-white flex flex-col justify-between">
+
+  <!-- TOP APP BAR -->
+  <header class="glass-panel sticky top-0 z-40 px-6 py-3 border-b border-ocean-800">
+    <div class="max-w-7xl mx-auto flex flex-wrap items-center justify-between gap-4">
+      <!-- Logo & System Info -->
+      <div class="flex items-center gap-3.5">
+        <div class="w-10 h-10 rounded-xl bg-gradient-to-tr from-blue-600 via-cyan-500 to-teal-400 flex items-center justify-center shadow-lg shadow-cyan-500/20 ring-1 ring-white/20">
+          <i class="ph-bold ph-fish-simple text-2xl text-ocean-950"></i>
+        </div>
+        <div>
+          <div class="flex items-center gap-2">
+            <h1 class="text-lg font-bold tracking-tight text-white flex items-center gap-2">
+              AQUASENSE <span class="text-xs px-2 py-0.5 rounded-full font-semibold uppercase tracking-wider bg-cyan-500/10 text-cyan-400 border border-cyan-500/30">IoT ESP32</span>
+            </h1>
+          </div>
+          <p class="text-xs text-slate-400">Giám sát & Điều khiển Môi trường Bể Nuôi Thủy Hải Sản</p>
+        </div>
+      </div>
+
+      <!-- Live Connection & Status Pills -->
+      <div class="flex items-center flex-wrap gap-3">
+        <!-- MQTT Broker status indicator -->
+        <div class="flex items-center gap-2.5 px-3 py-1.5 rounded-lg bg-ocean-900/90 border border-ocean-800 text-xs">
+          <div id="mqtt-status-dot" class="w-2.5 h-2.5 rounded-full bg-amber-400 led-glow-amber animate-pulse"></div>
+          <span class="text-slate-300 font-medium">MQTT Broker:</span>
+          <span id="mqtt-status-text" class="text-amber-400 font-mono font-semibold">Đang kết nối...</span>
+          <span class="text-slate-500 text-[10px] hidden sm:inline">(emqx.io:8084)</span>
+        </div>
+
+        <!-- ESP32 Device Pill -->
+        <div class="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-ocean-900/90 border border-ocean-800 text-xs text-slate-300">
+          <i class="ph-bold ph-cpu text-cyan-400 text-base"></i>
+          <span>ESP32 Node 01</span>
+          <span class="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
+        </div>
+
+        <!-- Timestamp Clock -->
+        <div class="hidden md:flex items-center gap-2 px-3 py-1.5 rounded-lg bg-ocean-900/60 border border-ocean-800/80 text-xs text-slate-400 font-mono">
+          <i class="ph-bold ph-clock"></i>
+          <span id="live-clock">--:--:--</span>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <!-- MAIN DASHBOARD CONTENT -->
+  <main class="max-w-7xl mx-auto w-full px-4 sm:px-6 py-6 space-y-6 flex-1">
+    
+    <!-- TOP NOTIFICATION ALERT BAR -->
+    <div id="status-banner" class="flex items-center justify-between p-3.5 rounded-xl border border-cyan-500/20 bg-cyan-950/30 text-cyan-200 text-xs sm:text-sm">
+      <div class="flex items-center gap-2.5">
+        <i class="ph-fill ph-check-circle text-cyan-400 text-lg"></i>
+        <span>Hệ thống IoT hoạt động ổn định. Đang tự động lắng nghe bản tin telemetry qua giao thức MQTT.</span>
+      </div>
+      <div class="flex items-center gap-3">
+        <button onclick="simulateTelemetryPacket()" class="px-2.5 py-1 rounded bg-cyan-500/20 hover:bg-cyan-500/30 text-cyan-300 border border-cyan-500/40 text-xs transition flex items-center gap-1.5">
+          <i class="ph-bold ph-arrows-clockwise"></i> Test Packet Mock
+        </button>
+      </div>
+    </div>
+
+    <!-- ROW 1: CARDS & VISUAL TANK SIMULATOR -->
+    <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+
+      <!-- LEFT COLUMN: DIGITAL METRIC CARDS (5 cols) -->
+      <div class="lg:col-span-5 flex flex-col gap-4">
+        
+        <!-- CARD 1: WATER LEVEL METRIC -->
+        <div class="glass-panel glass-card-hover rounded-2xl p-5 relative overflow-hidden">
+          <div class="absolute -right-6 -bottom-6 w-32 h-32 bg-cyan-500/10 rounded-full blur-2xl pointer-events-none"></div>
+          
+          <div class="flex items-center justify-between mb-3">
+            <div class="flex items-center gap-2.5">
+              <div class="p-2.5 rounded-xl bg-cyan-500/15 border border-cyan-400/20 text-cyan-400">
+                <i class="ph-bold ph-waves text-xl"></i>
+              </div>
+              <div>
+                <h3 class="text-xs uppercase font-bold tracking-wider text-slate-400">Mực Nước Bể Nuôi</h3>
+                <span class="text-[11px] text-slate-500">Cảm biến HC-SR04 Siêu âm</span>
+              </div>
+            </div>
+            <span id="level-badge" class="px-2.5 py-0.5 rounded-full text-[11px] font-semibold tracking-wide bg-emerald-500/15 text-emerald-400 border border-emerald-500/30">
+              Bình thường
+            </span>
+          </div>
+
+          <!-- PRIMARY VALUE REQUIRED CLASS: water-level-value -->
+          <div class="flex items-baseline justify-between mt-2">
+            <div>
+              <div class="water-level-value text-4xl sm:text-5xl font-black font-mono tracking-tight text-white drop-shadow-md">
+                1.42 m
+              </div>
+              <div class="text-xs text-slate-400 mt-1 flex items-center gap-1.5 font-medium">
+                <span>Tỷ lệ thể tích: </span>
+                <span id="level-percentage-text" class="text-cyan-400 font-bold font-mono">71%</span>
+                <span class="text-slate-500">(Bể sâu: 2.00 m)</span>
+              </div>
+            </div>
+            
+            <!-- Mini progress gauge -->
+            <div class="text-right">
+              <div class="text-[11px] text-slate-400">Khoảng cách tới mặt nước:</div>
+              <div id="sensor-distance-val" class="font-mono text-cyan-300 font-semibold text-base">58.0 cm</div>
+              <div class="text-[10px] text-slate-500">Tần số: 1s/lần</div>
+            </div>
+          </div>
+
+          <!-- Progress bar -->
+          <div class="w-full bg-ocean-900 rounded-full h-2 mt-4 overflow-hidden border border-ocean-800">
+            <div id="level-metric-bar" class="bg-gradient-to-r from-cyan-500 to-blue-500 h-2 rounded-full transition-all duration-700" style="width: 71%;"></div>
+          </div>
+          
+          <div class="flex justify-between items-center text-[10px] text-slate-500 mt-1 font-mono">
+            <span>Min: 0.40m</span>
+            <span>Ngưỡng chuẩn: 1.2m - 1.7m</span>
+            <span>Max: 2.00m</span>
+          </div>
+        </div>
+
+        <!-- CARD 2: POOL TEMPERATURE METRIC -->
+        <div class="glass-panel glass-card-hover rounded-2xl p-5 relative overflow-hidden">
+          <div class="absolute -right-6 -bottom-6 w-32 h-32 bg-amber-500/10 rounded-full blur-2xl pointer-events-none"></div>
+
+          <div class="flex items-center justify-between mb-3">
+            <div class="flex items-center gap-2.5">
+              <div class="p-2.5 rounded-xl bg-amber-500/15 border border-amber-400/20 text-amber-400">
+                <i class="ph-bold ph-thermometer-simple text-xl"></i>
+              </div>
+              <div>
+                <h3 class="text-xs uppercase font-bold tracking-wider text-slate-400">Nhiệt Độ Bể Nuôi</h3>
+                <span class="text-[11px] text-slate-500">Cảm biến chống nước DS18B20</span>
+              </div>
+            </div>
+            <span id="temp-badge" class="px-2.5 py-0.5 rounded-full text-[11px] font-semibold tracking-wide bg-emerald-500/15 text-emerald-400 border border-emerald-500/30">
+              Lý tưởng (Tôm / Cá)
+            </span>
+          </div>
+
+          <!-- PRIMARY VALUE REQUIRED CLASS: pool-temp-value -->
+          <div class="flex items-baseline justify-between mt-2">
+            <div>
+              <div class="pool-temp-value text-4xl sm:text-5xl font-black font-mono tracking-tight text-white drop-shadow-md">
+                27.8 °C
+              </div>
+              <div class="text-xs text-slate-400 mt-1 flex items-center gap-1.5 font-medium">
+                <span>Trạng thái: </span>
+                <span id="temp-status-text" class="text-emerald-400 font-semibold">Ổn định sinh học</span>
+                <span class="text-slate-500">(82.0 °F)</span>
+              </div>
+            </div>
+
+            <div class="text-right">
+              <div class="text-[11px] text-slate-400">Nhiệt độ môi trường:</div>
+              <div class="font-mono text-amber-300 font-semibold text-base">29.4 °C</div>
+              <div class="text-[10px] text-slate-500">Độ ẩm: 78%</div>
+            </div>
+          </div>
+
+          <!-- Progress bar -->
+          <div class="w-full bg-ocean-900 rounded-full h-2 mt-4 overflow-hidden border border-ocean-800">
+            <div id="temp-metric-bar" class="bg-gradient-to-r from-teal-500 via-amber-400 to-rose-500 h-2 rounded-full transition-all duration-700" style="width: 58%;"></div>
+          </div>
+
+          <div class="flex justify-between items-center text-[10px] text-slate-500 mt-1 font-mono">
+            <span>Lạnh: &lt; 22°C</span>
+            <span>Mục tiêu: 26°C - 30°C</span>
+            <span>Nóng: &gt; 33°C</span>
+          </div>
+        </div>
+
+        <!-- QUICK TELEMETRY MINI CARDS (DO, pH) -->
+        <div class="grid grid-cols-2 gap-3">
+          <div class="glass-panel rounded-xl p-3.5 flex items-center justify-between">
+            <div>
+              <div class="text-[11px] text-slate-400 font-medium">Oxy hòa tan (DO)</div>
+              <div class="text-lg font-bold font-mono text-cyan-300">6.8 mg/L</div>
+            </div>
+            <div class="p-2 rounded-lg bg-cyan-500/10 text-cyan-400">
+              <i class="ph-bold ph-drop text-lg"></i>
+            </div>
+          </div>
+
+          <div class="glass-panel rounded-xl p-3.5 flex items-center justify-between">
+            <div>
+              <div class="text-[11px] text-slate-400 font-medium">Độ pH nước</div>
+              <div class="text-lg font-bold font-mono text-teal-300">7.6 pH</div>
+            </div>
+            <div class="p-2 rounded-lg bg-teal-500/10 text-teal-400">
+              <i class="ph-bold ph-flask text-lg"></i>
+            </div>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- RIGHT COLUMN: VISUAL TANK MODEL (MÔ HÌNH BỂ NUÔI ĐỒ HỌA TRỰC QUAN) (7 cols) -->
+      <div class="lg:col-span-7 glass-panel rounded-2xl p-5 flex flex-col justify-between relative overflow-hidden">
+        
+        <!-- Tank Header -->
+        <div class="flex items-center justify-between border-b border-ocean-800/80 pb-3 mb-3">
+          <div class="flex items-center gap-2">
+            <span class="w-2.5 h-2.5 rounded-full bg-cyan-400 led-glow-blue animate-pulse"></span>
+            <h2 class="text-sm font-bold uppercase tracking-wider text-slate-200">
+              Mô hình Mô phỏng Bể Nuôi Trực quan (Visual Tank Simulator)
+            </h2>
+          </div>
+          <div class="flex items-center gap-2 text-xs text-slate-400">
+            <span class="px-2 py-0.5 rounded bg-ocean-800 text-cyan-300 font-mono text-[11px]">HC-SR04 Active</span>
+            <span id="tank-alarm-tag" class="px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 text-[11px] font-medium">Bình thường</span>
+          </div>
+        </div>
+
+        <!-- The Interactive Graphic Tank Container -->
+        <div class="relative w-full h-[320px] bg-gradient-to-b from-ocean-900 to-ocean-950 rounded-xl border-2 border-ocean-700/60 p-3 shadow-inner flex flex-col justify-end overflow-hidden">
+          
+          <!-- Distance Sensor Mount at top of tank -->
+          <div class="absolute top-2 left-1/2 -translate-x-1/2 z-20 flex flex-col items-center">
+            <div class="bg-slate-800 text-[10px] text-cyan-400 px-2 py-0.5 rounded border border-cyan-500/30 font-mono shadow-md flex items-center gap-1.5">
+              <i class="ph-fill ph-broadcast text-cyan-400"></i> HC-SR04 Sonar Beam
+            </div>
+            <!-- Ultrasonic Transducer eyes -->
+            <div class="flex items-center gap-2 mt-1 bg-slate-900 p-1.5 rounded-md border border-slate-700">
+              <div class="w-3.5 h-3.5 rounded-full bg-slate-700 border border-cyan-400/50 flex items-center justify-center">
+                <div class="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-ping"></div>
+              </div>
+              <div class="w-3.5 h-3.5 rounded-full bg-slate-700 border border-cyan-400/50"></div>
+            </div>
+            <!-- Dynamic Distance Echo Line -->
+            <div id="sonar-beam" class="w-[1px] bg-dashed border-l border-dashed border-cyan-400/40 h-16 transition-all duration-500"></div>
+          </div>
+
+          <!-- Measurement Depth Ruler Scale on Left Edge -->
+          <div class="absolute left-3 top-8 bottom-3 w-10 flex flex-col justify-between text-[10px] font-mono text-slate-500 border-r border-ocean-700/60 select-none z-20 pointer-events-none">
+            <span class="flex items-center gap-1">2.0m <span class="w-2 h-[1px] bg-rose-500"></span></span>
+            <span class="flex items-center gap-1">1.5m <span class="w-2 h-[1px] bg-slate-600"></span></span>
+            <span class="flex items-center gap-1">1.0m <span class="w-2 h-[1px] bg-cyan-500"></span></span>
+            <span class="flex items-center gap-1">0.5m <span class="w-2 h-[1px] bg-slate-600"></span></span>
+            <span class="flex items-center gap-1">0.0m <span class="w-2 h-[1px] bg-amber-500"></span></span>
+          </div>
+
+          <!-- Inflow & Outflow Pipe Visuals -->
+          <!-- Inflow Pipe (Top Right) -->
+          <div class="absolute top-10 right-2 z-20 flex items-center">
+            <div id="inflow-water-stream" class="hidden absolute top-8 right-5 w-2 h-28 bg-gradient-to-b from-cyan-400 to-blue-500 rounded-full animate-pulse opacity-80"></div>
+            <div class="bg-ocean-800 text-[10px] text-slate-300 px-2 py-1 rounded border border-ocean-600 flex items-center gap-1">
+              <i class="ph-bold ph-arrow-down-left text-cyan-400"></i> Bơm vào
+            </div>
+          </div>
+
+          <!-- Outflow Valve Pipe (Bottom Right) -->
+          <div class="absolute bottom-6 right-2 z-20 flex items-center">
+            <div class="bg-ocean-800 text-[10px] text-slate-300 px-2 py-1 rounded border border-ocean-600 flex items-center gap-1">
+              <i class="ph-bold ph-arrow-right text-rose-400"></i> Van xả
+            </div>
+          </div>
+
+          <!-- THE LIQUID WATER BODY (Dynamic height based on HC-SR04) -->
+          <div id="tank-water-body" class="relative w-full rounded-b-lg overflow-hidden transition-all duration-700 ease-out" style="height: 71%; background: linear-gradient(180deg, rgba(6, 182, 212, 0.45) 0%, rgba(14, 116, 144, 0.75) 45%, rgba(15, 23, 42, 0.95) 100%);">
+            
+            <!-- Animated SVG Waves at Water Surface -->
+            <svg class="wave-svg" viewBox="0 0 1200 120" preserveAspectRatio="none">
+              <path class="wave-layer-1" d="M0,0 C150,90 350,-40 500,45 C650,120 900,-20 1200,40 L1200,120 L0,120 Z"></path>
+              <path class="wave-layer-2" d="M0,20 C200,-30 420,70 600,15 C800,-40 1000,60 1200,20 L1200,120 L0,120 Z"></path>
+            </svg>
+
+            <!-- Bubbles Effect in Tank -->
+            <div class="absolute inset-0 pointer-events-none overflow-hidden">
+              <span class="absolute bottom-2 left-1/4 w-3 h-3 bg-white/40 rounded-full animate-bubble-rise-1"></span>
+              <span class="absolute bottom-4 left-1/3 w-2 h-2 bg-white/50 rounded-full animate-bubble-rise-2"></span>
+              <span class="absolute bottom-1 left-2/3 w-3.5 h-3.5 bg-white/35 rounded-full animate-bubble-rise-3"></span>
+              <span class="absolute bottom-3 left-3/4 w-2 h-2 bg-white/45 rounded-full animate-bubble-rise-1" style="animation-delay: 1.8s;"></span>
+              <span class="absolute bottom-2 left-1/2 w-4 h-4 bg-cyan-200/30 rounded-full animate-bubble-rise-2" style="animation-delay: 2.2s;"></span>
+            </div>
+
+            <!-- Stylized Aquatic Swimming Fish Animation -->
+            <div class="absolute top-1/3 left-1/3 animate-pulse-subtle pointer-events-none opacity-85 text-cyan-200">
+              <i class="ph-bold ph-fish-simple text-xl transform -scale-x-100 drop-shadow"></i>
+            </div>
+            <div class="absolute bottom-1/4 left-1/2 animate-pulse-subtle pointer-events-none opacity-60 text-teal-300" style="animation-delay: 1s;">
+              <i class="ph-bold ph-fish-simple text-sm drop-shadow"></i>
+            </div>
+
+            <!-- Aerator Bubbler at tank bottom -->
+            <div class="absolute bottom-1 left-1/2 -translate-x-1/2 flex items-center gap-1 z-10">
+              <div class="px-2 py-0.5 rounded bg-ocean-950/80 border border-cyan-500/30 text-[9px] text-cyan-300 font-mono">
+                Sủi khí Oxy
+              </div>
+            </div>
+
+            <!-- Center Water Height Overlay Marker -->
+            <div class="absolute inset-0 flex items-center justify-center pointer-events-none">
+              <div class="px-3.5 py-1.5 rounded-xl bg-ocean-950/80 backdrop-blur-md border border-cyan-400/30 text-center shadow-xl">
+                <span class="text-xs text-slate-300 font-medium">Mực nước hiện tại</span>
+                <div id="tank-visual-overlay-val" class="text-xl font-bold font-mono text-cyan-300">1.42 m (71%)</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Tank Bottom Legends & Threshold Guidelines -->
+        <div class="mt-3 grid grid-cols-3 gap-2 text-center text-xs">
+          <div class="p-2 rounded-lg bg-ocean-900/80 border border-ocean-800">
+            <span class="text-slate-400 text-[11px] block">Cảnh báo Cạn (&lt; 0.6m)</span>
+            <span class="text-amber-400 font-mono font-semibold">Tự bật Bơm Vào</span>
+          </div>
+          <div class="p-2 rounded-lg bg-ocean-900/80 border border-ocean-800">
+            <span class="text-slate-400 text-[11px] block">Mực nước tối ưu</span>
+            <span class="text-emerald-400 font-mono font-semibold">1.20m - 1.65m</span>
+          </div>
+          <div class="p-2 rounded-lg bg-ocean-900/80 border border-ocean-800">
+            <span class="text-slate-400 text-[11px] block">Cảnh báo Tràn (&gt; 1.8m)</span>
+            <span class="text-rose-400 font-mono font-semibold">Tự kích hoạt Xả</span>
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- ROW 2: REAL-TIME CHARTS (Chart.js) -->
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      
+      <!-- CHART 1: REAL-TIME WATER LEVEL -->
+      <div class="glass-panel rounded-2xl p-5 flex flex-col justify-between">
+        <div class="flex items-center justify-between mb-4">
+          <div class="flex items-center gap-2.5">
+            <div class="w-8 h-8 rounded-lg bg-cyan-500/20 text-cyan-400 flex items-center justify-center font-bold">
+              <i class="ph-bold ph-chart-line-up text-lg"></i>
+            </div>
+            <div>
+              <h3 class="text-sm font-bold text-slate-100">Đồ thị Mực Nước Thời Gian Thực</h3>
+              <p class="text-[11px] text-slate-400">Biểu đồ cập nhật chu kỳ 2s từ cảm biến HC-SR04</p>
+            </div>
+          </div>
+          <div class="flex items-center gap-2">
+            <span class="w-2 h-2 rounded-full bg-cyan-400 animate-ping"></span>
+            <span class="text-xs font-mono text-cyan-400">Live 2s</span>
+          </div>
+        </div>
+
+        <div class="relative h-60 w-full">
+          <canvas id="waterLevelChart"></canvas>
+        </div>
+
+        <div class="flex items-center justify-between mt-3 text-xs text-slate-400 pt-2 border-t border-ocean-800">
+          <span>Trung bình 1h: <strong class="text-slate-200 font-mono">1.40 m</strong></span>
+          <span>Cao nhất: <strong class="text-slate-200 font-mono">1.46 m</strong></span>
+          <span>Thấp nhất: <strong class="text-slate-200 font-mono">1.35 m</strong></span>
+        </div>
+      </div>
+
+      <!-- CHART 2: REAL-TIME POOL TEMPERATURE -->
+      <div class="glass-panel rounded-2xl p-5 flex flex-col justify-between">
+        <div class="flex items-center justify-between mb-4">
+          <div class="flex items-center gap-2.5">
+            <div class="w-8 h-8 rounded-lg bg-amber-500/20 text-amber-400 flex items-center justify-center font-bold">
+              <i class="ph-bold ph-chart-line text-lg"></i>
+            </div>
+            <div>
+              <h3 class="text-sm font-bold text-slate-100">Đồ thị Nhiệt Độ Bể Thời Gian Thực</h3>
+              <p class="text-[11px] text-slate-400">Biến thiên nhiệt độ nước đo từ đầu dò DS18B20</p>
+            </div>
+          </div>
+          <div class="flex items-center gap-2">
+            <span class="w-2 h-2 rounded-full bg-amber-400 animate-ping"></span>
+            <span class="text-xs font-mono text-amber-400">Live 2s</span>
+          </div>
+        </div>
+
+        <div class="relative h-60 w-full">
+          <canvas id="temperatureChart"></canvas>
+        </div>
+
+        <div class="flex items-center justify-between mt-3 text-xs text-slate-400 pt-2 border-t border-ocean-800">
+          <span>Trung bình 1h: <strong class="text-slate-200 font-mono">27.6 °C</strong></span>
+          <span>Cao nhất: <strong class="text-slate-200 font-mono">28.1 °C</strong></span>
+          <span>Thấp nhất: <strong class="text-slate-200 font-mono">27.2 °C</strong></span>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- ROW 3: MANUAL CONTROL PANEL (KHỐI ĐIỀU KHIỂN THIẾT BỊ) -->
+    <div class="glass-panel rounded-2xl p-6 relative">
+      
+      <!-- Panel Header with Auto/Manual Toggle -->
+      <div class="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-5 border-b border-ocean-800">
+        <div>
+          <div class="flex items-center gap-2.5">
+            <div class="p-2 rounded-lg bg-blue-600/20 text-blue-400">
+              <i class="ph-bold ph-sliders text-xl"></i>
+            </div>
+            <h2 class="text-base font-bold text-white tracking-wide">
+              Khối Điều Khiển Thiết Bị Chấp Hành (Actuator Control Panel)
+            </h2>
+          </div>
+          <p class="text-xs text-slate-400 mt-1">
+            Điều khiển máy bơm nước vào, van xả nước ra và thiết lập cơ chế hoạt động qua MQTT commands.
+          </p>
+        </div>
+
+        <!-- MODE SWITCH: AUTO / MANUAL -->
+        <div class="flex items-center gap-3 bg-ocean-900/90 p-1.5 rounded-xl border border-ocean-800 self-start md:self-center">
+          <span class="text-xs font-semibold px-2 text-slate-300">Chế độ vận hành:</span>
+          
+          <button id="mode-auto-btn" onclick="setSystemMode('AUTO')" class="px-4 py-1.5 rounded-lg text-xs font-bold transition-all duration-200 flex items-center gap-1.5 bg-cyan-500 text-ocean-950 shadow-md shadow-cyan-500/20">
+            <i class="ph-bold ph-robot"></i> Tự Động (AUTO)
+          </button>
+          
+          <button id="mode-manual-btn" onclick="setSystemMode('MANUAL')" class="px-4 py-1.5 rounded-lg text-xs font-bold text-slate-400 hover:text-white transition-all duration-200 flex items-center gap-1.5">
+            <i class="ph-bold ph-hand-pointing"></i> Thủ Công (MANUAL)
+          </button>
+        </div>
+      </div>
+
+      <!-- Control Buttons & Actuator Grid -->
+      <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mt-6">
+        
+        <!-- ACTUATOR 1: WATER INLET PUMP (MÁY BƠM NƯỚC VÀO) -->
+        <div class="bg-ocean-900/70 border border-ocean-800 rounded-xl p-5 flex flex-col justify-between hover:border-cyan-500/40 transition">
+          <div class="flex items-center justify-between mb-4">
+            <div class="flex items-center gap-3">
+              <div class="w-10 h-10 rounded-xl bg-blue-500/10 border border-blue-500/30 flex items-center justify-center text-blue-400">
+                <i class="ph-bold ph-arrow-circle-down text-2xl"></i>
+              </div>
+              <div>
+                <h4 class="text-sm font-bold text-white">Máy Bơm Nước Vào</h4>
+                <span class="text-[11px] text-slate-400">Water Inlet Pump (Relay 1)</span>
+              </div>
+            </div>
+            <!-- Status Badge -->
+            <span id="pump-status-badge" class="px-2.5 py-1 rounded-full text-xs font-mono font-bold bg-slate-800 text-slate-400 border border-slate-700">
+              ĐANG TẮT
+            </span>
+          </div>
+
+          <p class="text-xs text-slate-400 mb-5 leading-relaxed">
+            Kích hoạt bơm cấp nước sạch từ nguồn cấp ngoài vào bể nuôi khi mực nước giảm dưới ngưỡng an toàn.
+          </p>
+
+          <!-- Toggle Button for Pump with Clear On/Off State & Color Transition -->
+          <button id="btn-pump-toggle" onclick="togglePump()" class="w-full py-3 px-4 rounded-xl font-bold text-sm tracking-wide transition-all duration-300 flex items-center justify-center gap-2 bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 active:scale-[0.98]">
+            <i class="ph-bold ph-power text-base"></i>
+            <span id="pump-btn-label">BẬT MÁY BƠM VÀO</span>
+          </button>
+          <div class="mt-2.5 text-[10px] text-slate-500 flex justify-between font-mono">
+            <span>Topic: lab3/de4/aquarium_esp32/sensor/control</span>
+            <span id="pump-timer">Thời gian chạy: 00:00</span>
+          </div>
+        </div>
+
+        <!-- ACTUATOR 2: DRAIN VALVE (VAN THOÁT NƯỚC RA) -->
+        <div class="bg-ocean-900/70 border border-ocean-800 rounded-xl p-5 flex flex-col justify-between hover:border-cyan-500/40 transition">
+          <div class="flex items-center justify-between mb-4">
+            <div class="flex items-center gap-3">
+              <div class="w-10 h-10 rounded-xl bg-rose-500/10 border border-rose-500/30 flex items-center justify-center text-rose-400">
+                <i class="ph-bold ph-arrow-circle-up text-2xl"></i>
+              </div>
+              <div>
+                <h4 class="text-sm font-bold text-white">Van Thoát Nước Ra</h4>
+                <span class="text-[11px] text-slate-400">Drain Solenoid Valve (Relay 2)</span>
+              </div>
+            </div>
+            <!-- Status Badge -->
+            <span id="valve-status-badge" class="px-2.5 py-1 rounded-full text-xs font-mono font-bold bg-slate-800 text-slate-400 border border-slate-700">
+              ĐANG ĐÓNG
+            </span>
+          </div>
+
+          <p class="text-xs text-slate-400 mb-5 leading-relaxed">
+            Mở van điện từ để thoát nước thải, hỗ trợ thay nước định kỳ hoặc chống tràn khi mực nước vượt ngưỡng.
+          </p>
+
+          <!-- Toggle Button for Drain Valve with Clear On/Off State & Color Transition -->
+          <button id="btn-valve-toggle" onclick="toggleValve()" class="w-full py-3 px-4 rounded-xl font-bold text-sm tracking-wide transition-all duration-300 flex items-center justify-center gap-2 bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 active:scale-[0.98]">
+            <i class="ph-bold ph-valve text-base"></i>
+            <span id="valve-btn-label">MỞ VAN XẢ RA</span>
+          </button>
+          <div class="mt-2.5 text-[10px] text-slate-500 flex justify-between font-mono">
+            <span>Topic: lab3/de4/aquarium_esp32/sensor/control</span>
+            <span id="valve-timer">Trạng thái: Khóa kín</span>
+          </div>
+        </div>
+
+        <!-- ACTUATOR 3: AERATOR / OXYGEN SYSTEM (HỆ THỐNG SỦI OXY) -->
+        <div class="bg-ocean-900/70 border border-ocean-800 rounded-xl p-5 flex flex-col justify-between hover:border-cyan-500/40 transition">
+          <div class="flex items-center justify-between mb-4">
+            <div class="flex items-center gap-3">
+              <div class="w-10 h-10 rounded-xl bg-teal-500/10 border border-teal-500/30 flex items-center justify-center text-teal-400">
+                <i class="ph-bold ph-wind text-2xl"></i>
+              </div>
+              <div>
+                <h4 class="text-sm font-bold text-white">Máy Sủi Khí Oxy</h4>
+                <span class="text-[11px] text-slate-400">Oxygen Aerator (Relay 3)</span>
+              </div>
+            </div>
+            <!-- Status Badge -->
+            <span id="aerator-status-badge" class="px-2.5 py-1 rounded-full text-xs font-mono font-bold bg-teal-500/20 text-teal-400 border border-teal-500/40">
+              ĐANG BẬT
+            </span>
+          </div>
+
+          <p class="text-xs text-slate-400 mb-5 leading-relaxed">
+            Duy trì nồng độ Oxy hòa tan ổn định cho tôm cá sinh trưởng tốt. Luôn ưu tiên chạy ở chế độ bảo vệ sinh học.
+          </p>
+
+          <button id="btn-aerator-toggle" onclick="toggleAerator()" class="w-full py-3 px-4 rounded-xl font-bold text-sm tracking-wide transition-all duration-300 flex items-center justify-center gap-2 bg-teal-600 hover:bg-teal-500 text-white shadow-lg shadow-teal-600/20 active:scale-[0.98]">
+            <i class="ph-bold ph-power text-base"></i>
+            <span id="aerator-btn-label">TẮT MÁY SỦI OXY</span>
+          </button>
+          <div class="mt-2.5 text-[10px] text-slate-500 flex justify-between font-mono">
+            <span>Topic: lab3/de4/aquarium_esp32/control</span>
+            <span>Áp suất: 0.24 MPa</span>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- Manual Mode Notification Bar -->
+      <div id="manual-mode-hint" class="hidden mt-4 p-3 rounded-lg bg-amber-500/10 border border-amber-500/30 text-amber-300 text-xs flex items-center justify-between">
+        <span class="flex items-center gap-2">
+          <i class="ph-bold ph-warning text-base"></i>
+          Hệ thống đang ở chế độ <strong>THỦ CÔNG (MANUAL)</strong>. Các thuật toán tự động ngắt theo ngưỡng nước tạm thời bị hoãn. Hãy giám sát cẩn thận.
+        </span>
+        <button onclick="setSystemMode('AUTO')" class="underline hover:text-amber-200 font-semibold">Chuyển lại Auto</button>
+      </div>
+    </div>
+
+    <!-- ROW 4: MQTT CONFIGURATION & TERMINAL LOGS -->
+    <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+      
+      <!-- MQTT BROKER CONNECTION CARD (5 cols) -->
+      <div class="lg:col-span-5 glass-panel rounded-2xl p-5 flex flex-col justify-between">
+        <div>
+          <div class="flex items-center justify-between mb-3">
+            <h3 class="text-sm font-bold text-white flex items-center gap-2">
+              <i class="ph-bold ph-plugs-connected text-cyan-400"></i> Cấu hình MQTT Broker
+            </h3>
+            <span class="text-[11px] font-mono text-slate-400">WebSockets SSL</span>
+          </div>
+
+          <div class="space-y-3 text-xs">
+            <div>
+              <label class="block text-slate-400 mb-1">Host Broker (WSS URL):</label>
+              <input type="text" id="mqtt-host-input" value="broker.emqx.io" class="w-full bg-ocean-900 border border-ocean-700 rounded-lg px-3 py-2 text-slate-200 font-mono focus:border-cyan-400 focus:outline-none text-xs">
+            </div>
+
+            <div class="grid grid-cols-2 gap-3">
+              <div>
+                <label class="block text-slate-400 mb-1">Port WSS:</label>
+                <input type="number" id="mqtt-port-input" value="8084" class="w-full bg-ocean-900 border border-ocean-700 rounded-lg px-3 py-2 text-slate-200 font-mono focus:border-cyan-400 focus:outline-none text-xs">
+              </div>
+              <div>
+                <label class="block text-slate-400 mb-1">Path:</label>
+                <input type="text" id="mqtt-path-input" value="/mqtt" class="w-full bg-ocean-900 border border-ocean-700 rounded-lg px-3 py-2 text-slate-200 font-mono focus:border-cyan-400 focus:outline-none text-xs">
+              </div>
+            </div>
+
+            <div>
+              <label class="block text-slate-400 mb-1">Telemetry Topic (Subscribe):</label>
+              <input type="text" id="mqtt-topic-telemetry" value="lab3/de4/aquarium_esp32/sensor" class="w-full bg-ocean-900 border border-ocean-700 rounded-lg px-3 py-2 text-cyan-400 font-mono text-xs" readonly>
+            </div>
+          </div>
+        </div>
+
+        <div class="pt-4 border-t border-ocean-800 flex gap-2">
+          <button onclick="reconnectMQTT()" class="flex-1 py-2 px-3 rounded-lg bg-cyan-600 hover:bg-cyan-500 text-white font-bold text-xs transition flex items-center justify-center gap-1.5 shadow-md shadow-cyan-600/20">
+            <i class="ph-bold ph-arrows-counter-clockwise"></i> Kết Nối Lại Broker
+          </button>
+          <button onclick="publishSampleControl()" class="py-2 px-3 rounded-lg bg-ocean-800 hover:bg-ocean-700 text-slate-200 font-semibold text-xs border border-ocean-700 transition">
+            Ping ESP32
+          </button>
+        </div>
+      </div>
+
+      <!-- LIVE MQTT CONSOLE / PACKET LOGS (7 cols) -->
+      <div class="lg:col-span-7 glass-panel rounded-2xl p-5 flex flex-col justify-between">
+        <div class="flex items-center justify-between mb-2">
+          <div class="flex items-center gap-2">
+            <i class="ph-bold ph-terminal-window text-cyan-400"></i>
+            <h3 class="text-sm font-bold text-white">Console Nhật Ký Gói Tin MQTT Thời Gian Thực</h3>
+          </div>
+          <button onclick="clearLogs()" class="text-[11px] text-slate-400 hover:text-cyan-400 flex items-center gap-1">
+            <i class="ph-bold ph-trash"></i> Xóa log
+          </button>
+        </div>
+
+        <!-- Terminal screen -->
+        <div id="mqtt-console-log" class="w-full h-44 bg-ocean-950/90 rounded-xl p-3 border border-ocean-800 font-mono text-[11px] text-slate-300 overflow-y-auto space-y-1.5 select-text">
+          <div class="text-cyan-400/80">[SYSTEM] Khởi tạo giao diện AquaSense Pro Dashboard...</div>
+          <div class="text-slate-400">[INFO] Tải thư viện Chart.js & MQTT.js thành công.</div>
+          <div class="text-emerald-400">[MQTT] Đang thử kết nối WSS tới wss://broker.emqx.io:8084/mqtt...</div>
+        </div>
+
+        <div class="flex items-center justify-between text-[11px] text-slate-400 pt-2 border-t border-ocean-800 mt-2 font-mono">
+          <span>QoS: 0 (At most once)</span>
+          <span>Bản tin nhận: <span id="packet-counter" class="text-cyan-300 font-bold">1</span></span>
+          <span class="text-emerald-400 flex items-center gap-1"><span class="w-1.5 h-1.5 rounded-full bg-emerald-400"></span> Stream Sẵn Sàng</span>
+        </div>
+      </div>
+
+    </div>
+
+  </main>
+
+  <!-- FOOTER -->
+  <footer class="glass-panel border-t border-ocean-800/80 px-6 py-4 mt-8 text-xs text-slate-400 text-center flex flex-col sm:flex-row items-center justify-between max-w-7xl mx-auto w-full gap-2">
+    <div class="flex items-center gap-2">
+      <span class="w-2 h-2 rounded-full bg-cyan-400"></span>
+      <span>Hệ Thống IoT Giám Sát Nuôi Trồng Thủy Hải Sản Thông Minh &copy; 2025</span>
+    </div>
+    <div class="flex items-center gap-4 text-slate-400">
+      <span>Vi điều khiển: ESP32 NodeMCU-32S</span>
+      <span>Giao thức: MQTT / WebSocket SSL</span>
+      <span>Sensors: HC-SR04 & DS18B20</span>
+    </div>
+  </footer>
+
+  <!-- SCRIPT LOGIC (MQTT, CHARTS, INTERACTION, SIMULATION) -->
+  <script>
+    // --- STATE MANAGEMENT ---
+    let systemState = {
+      waterLevel: 1.42,       // meters (0 to 2.0m)
+      temperature: 27.8,      // Celsius
+      distanceCm: 58.0,       // Sensor distance to surface
+      maxTankHeight: 2.0,     // 2.0 meters deep
+      mode: 'AUTO',           // 'AUTO' or 'MANUAL'
+      pumpInlet: false,       // Inflow Pump state
+      valveDrain: false,      // Outflow Valve state
+      aeratorOxygen: true,    // Aerator state
+      packetCount: 1,
+      mqttConnected: false
+    };
+
+    // --- CLOCK ---
+    function updateClock() {
+      const now = new Date();
+      const clockEl = document.getElementById('live-clock');
+      if (clockEl) {
+        clockEl.textContent = now.toLocaleTimeString('vi-VN');
+      }
+    }
+    setInterval(updateClock, 1000);
+    updateClock();
+
+    // --- LOGGING HELPER ---
+    function logMessage(text, colorClass = 'text-slate-300') {
+      const consoleEl = document.getElementById('mqtt-console-log');
+      if (!consoleEl) return;
+      const time = new Date().toLocaleTimeString('vi-VN');
+      const entry = document.createElement('div');
+      entry.className = colorClass;
+      entry.innerHTML = `<span class="text-slate-500">[${time}]</span> ${text}`;
+      consoleEl.appendChild(entry);
+      consoleEl.scrollTop = consoleEl.scrollHeight;
+    }
+
+    function clearLogs() {
+      const consoleEl = document.getElementById('mqtt-console-log');
+      if (consoleEl) {
+        consoleEl.innerHTML = '<div class="text-slate-500">Console đã được xóa.</div>';
+      }
+    }
+
+    // --- CHART.JS SETUP ---
+    const chartLabels = [];
+    const initialWaterData = [];
+    const initialTempData = [];
+    
+    // Seed initial historical points (past 12 ticks)
+    const nowTs = Date.now();
+    for (let i = 11; i >= 0; i--) {
+      const t = new Date(nowTs - i * 3000);
+      chartLabels.push(t.toLocaleTimeString('vi-VN', { hour12: false, hour: '2-digit', minute:'2-digit', second:'2-digit' }));
+      initialWaterData.push((1.38 + Math.random() * 0.08).toFixed(2));
+      initialTempData.push((27.4 + Math.random() * 0.7).toFixed(1));
+    }
+
+    // Chart Common Defaults for Dark Theme
+    Chart.defaults.color = '#94a3b8';
+    Chart.defaults.font.family = 'monospace, sans-serif';
+
+    // 1. Water Level Chart
+    const ctxWater = document.getElementById('waterLevelChart').getContext('2d');
+    const waterGradient = ctxWater.createLinearGradient(0, 0, 0, 240);
+    waterGradient.addColorStop(0, 'rgba(6, 182, 212, 0.45)');
+    waterGradient.addColorStop(1, 'rgba(6, 182, 212, 0.01)');
+
+    const waterChart = new Chart(ctxWater, {
+      type: 'line',
+      data: {
+        labels: [...chartLabels],
+        datasets: [{
+          label: 'Mực nước (m)',
+          data: [...initialWaterData],
+          borderColor: '#06b6d4',
+          backgroundColor: waterGradient,
+          borderWidth: 2.5,
+          tension: 0.35,
+          fill: true,
+          pointRadius: 3,
+          pointHoverRadius: 6,
+          pointBackgroundColor: '#06b6d4',
+          pointBorderColor: '#07162c',
+        }]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        animation: { duration: 400 },
+        scales: {
+          x: {
+            grid: { color: 'rgba(21, 57, 102, 0.35)' },
+            ticks: { maxTicksLimit: 6, font: { size: 10 } }
+          },
+          y: {
+            min: 0,
+            max: 2.0,
+            grid: { color: 'rgba(21, 57, 102, 0.4)' },
+            ticks: {
+              stepSize: 0.4,
+              font: { size: 10 },
+              callback: (val) => val.toFixed(1) + ' m'
+            }
+          }
+        },
+        plugins: {
+          legend: { display: false },
+          tooltip: {
+            backgroundColor: '#0a1e3b',
+            borderColor: '#06b6d4',
+            borderWidth: 1,
+            titleFont: { size: 11 },
+            bodyFont: { size: 12, weight: 'bold' }
+          }
+        }
+      }
+    });
+
+    // 2. Temperature Chart
+    const ctxTemp = document.getElementById('temperatureChart').getContext('2d');
+    const tempGradient = ctxTemp.createLinearGradient(0, 0, 0, 240);
+    tempGradient.addColorStop(0, 'rgba(245, 158, 11, 0.4)');
+    tempGradient.addColorStop(1, 'rgba(245, 158, 11, 0.01)');
+
+    const tempChart = new Chart(ctxTemp, {
+      type: 'line',
+      data: {
+        labels: [...chartLabels],
+        datasets: [{
+          label: 'Nhiệt độ (°C)',
+          data: [...initialTempData],
+          borderColor: '#f59e0b',
+          backgroundColor: tempGradient,
+          borderWidth: 2.5,
+          tension: 0.35,
+          fill: true,
+          pointRadius: 3,
+          pointHoverRadius: 6,
+          pointBackgroundColor: '#f59e0b',
+          pointBorderColor: '#07162c',
+        }]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        animation: { duration: 400 },
+        scales: {
+          x: {
+            grid: { color: 'rgba(21, 57, 102, 0.35)' },
+            ticks: { maxTicksLimit: 6, font: { size: 10 } }
+          },
+          y: {
+            min: 20,
+            max: 35,
+            grid: { color: 'rgba(21, 57, 102, 0.4)' },
+            ticks: {
+              stepSize: 3,
+              font: { size: 10 },
+              callback: (val) => val + ' °C'
+            }
+          }
+        },
+        plugins: {
+          legend: { display: false },
+          tooltip: {
+            backgroundColor: '#0a1e3b',
+            borderColor: '#f59e0b',
+            borderWidth: 1,
+            titleFont: { size: 11 },
+            bodyFont: { size: 12, weight: 'bold' }
+          }
+        }
+      }
+    });
+
+    // --- UI RENDER UPDATE FUNCTIONS ---
+    function updateDashboardUI() {
+      // 1. Water Level Cards & Visual Tank Model
+      const waterLevelVal = Number(systemState.waterLevel);
+      const percentage = Math.min(100, Math.max(0, Math.round((waterLevelVal / systemState.maxTankHeight) * 100)));
+      
+      // Target class: water-level-value
+      const waterLevelElements = document.querySelectorAll('.water-level-value');
+      waterLevelElements.forEach(el => {
+        el.textContent = `${waterLevelVal.toFixed(2)} m`;
+      });
+
+      const levelPercentageText = document.getElementById('level-percentage-text');
+      if (levelPercentageText) levelPercentageText.textContent = `${percentage}%`;
+
+      const levelMetricBar = document.getElementById('level-metric-bar');
+      if (levelMetricBar) levelMetricBar.style.width = `${percentage}%`;
+
+      const sensorDistEl = document.getElementById('sensor-distance-val');
+      if (sensorDistEl) sensorDistEl.textContent = `${systemState.distanceCm.toFixed(1)} cm`;
+
+      // Update Visual Tank Liquid Height
+      const tankWaterBody = document.getElementById('tank-water-body');
+      if (tankWaterBody) {
+        tankWaterBody.style.height = `${percentage}%`;
+      }
+
+      // Update Visual Tank Center text
+      const tankOverlayVal = document.getElementById('tank-visual-overlay-val');
+      if (tankOverlayVal) {
+        tankOverlayVal.textContent = `${waterLevelVal.toFixed(2)} m (${percentage}%)`;
+      }
+
+      // Adjust Sonar beam visual height based on water level
+      const sonarBeam = document.getElementById('sonar-beam');
+      if (sonarBeam) {
+        const spaceHeight = Math.max(12, Math.round((100 - percentage) * 1.8));
+        sonarBeam.style.height = `${spaceHeight}px`;
+      }
+
+      // Water Level Status Badge & Warnings
+      const levelBadge = document.getElementById('level-badge');
+      const tankAlarmTag = document.getElementById('tank-alarm-tag');
+      
+      if (waterLevelVal < 0.6) {
+        // Low Water Warning
+        if (levelBadge) {
+          levelBadge.className = 'px-2.5 py-0.5 rounded-full text-[11px] font-semibold tracking-wide bg-amber-500/20 text-amber-400 border border-amber-500/40 animate-pulse';
+          levelBadge.textContent = 'Mực nước thấp (Cạn)';
+        }
+        if (tankAlarmTag) {
+          tankAlarmTag.className = 'px-2 py-0.5 rounded bg-amber-500/20 text-amber-400 border border-amber-500/40 text-[11px] font-bold';
+          tankAlarmTag.textContent = 'CẢNH BÁO: CẠN NƯỚC';
+        }
+        if (tankWaterBody) {
+          tankWaterBody.style.background = 'linear-gradient(180deg, rgba(245, 158, 11, 0.4) 0%, rgba(180, 83, 9, 0.75) 45%, rgba(15, 23, 42, 0.95) 100%)';
+        }
+      } else if (waterLevelVal > 1.8) {
+        // Overflow Danger
+        if (levelBadge) {
+          levelBadge.className = 'px-2.5 py-0.5 rounded-full text-[11px] font-semibold tracking-wide bg-rose-500/20 text-rose-400 border border-rose-500/40 animate-pulse';
+          levelBadge.textContent = 'Cảnh báo: Tràn bể!';
+        }
+        if (tankAlarmTag) {
+          tankAlarmTag.className = 'px-2 py-0.5 rounded bg-rose-500/20 text-rose-400 border border-rose-500/40 text-[11px] font-bold';
+          tankAlarmTag.textContent = 'NGUY HIỂM: NGUY CƠ TRÀN';
+        }
+        if (tankWaterBody) {
+          tankWaterBody.style.background = 'linear-gradient(180deg, rgba(239, 68, 68, 0.45) 0%, rgba(185, 28, 28, 0.75) 45%, rgba(15, 23, 42, 0.95) 100%)';
+        }
+      } else {
+        // Normal Safe Range
+        if (levelBadge) {
+          levelBadge.className = 'px-2.5 py-0.5 rounded-full text-[11px] font-semibold tracking-wide bg-emerald-500/15 text-emerald-400 border border-emerald-500/30';
+          levelBadge.textContent = 'Mực nước ổn định';
+        }
+        if (tankAlarmTag) {
+          tankAlarmTag.className = 'px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 text-[11px] font-medium';
+          tankAlarmTag.textContent = 'Mực nước bình thường';
+        }
+        if (tankWaterBody) {
+          tankWaterBody.style.background = 'linear-gradient(180deg, rgba(6, 182, 212, 0.45) 0%, rgba(14, 116, 144, 0.75) 45%, rgba(15, 23, 42, 0.95) 100%)';
+        }
+      }
+
+      // 2. Temperature Value Cards
+      const tempVal = Number(systemState.temperature);
+      // Target class: pool-temp-value
+      const poolTempElements = document.querySelectorAll('.pool-temp-value');
+      poolTempElements.forEach(el => {
+        el.textContent = `${tempVal.toFixed(1)} °C`;
+      });
+
+      const tempMetricBar = document.getElementById('temp-metric-bar');
+      if (tempMetricBar) {
+        // Map 20 to 35 -> 0% to 100%
+        const tempPct = Math.min(100, Math.max(0, Math.round(((tempVal - 20) / 15) * 100)));
+        tempMetricBar.style.width = `${tempPct}%`;
+      }
+
+      const tempBadge = document.getElementById('temp-badge');
+      const tempStatusText = document.getElementById('temp-status-text');
+      if (tempVal > 31.5) {
+        if (tempBadge) {
+          tempBadge.className = 'px-2.5 py-0.5 rounded-full text-[11px] font-semibold tracking-wide bg-rose-500/20 text-rose-400 border border-rose-500/40';
+          tempBadge.textContent = 'Nhiệt độ cao';
+        }
+        if (tempStatusText) {
+          tempStatusText.textContent = 'Cần làm mát nước';
+          tempStatusText.className = 'text-rose-400 font-semibold';
+        }
+      } else if (tempVal < 24.0) {
+        if (tempBadge) {
+          tempBadge.className = 'px-2.5 py-0.5 rounded-full text-[11px] font-semibold tracking-wide bg-cyan-500/20 text-cyan-400 border border-cyan-500/40';
+          tempBadge.textContent = 'Nước lạnh';
+        }
+        if (tempStatusText) {
+          tempStatusText.textContent = 'Cần sưởi ấm';
+          tempStatusText.className = 'text-cyan-400 font-semibold';
+        }
+      } else {
+        if (tempBadge) {
+          tempBadge.className = 'px-2.5 py-0.5 rounded-full text-[11px] font-semibold tracking-wide bg-emerald-500/15 text-emerald-400 border border-emerald-500/30';
+          tempBadge.textContent = 'Lý tưởng (Tôm / Cá)';
+        }
+        if (tempStatusText) {
+          tempStatusText.textContent = 'Ổn định sinh học';
+          tempStatusText.className = 'text-emerald-400 font-semibold';
+        }
+      }
+
+      // 3. Actuator Buttons Render (PUMP, VALVE, AERATOR)
+      renderActuators();
+    }
+
+    function renderActuators() {
+      // PUMP BUTTON & BADGE
+      const btnPump = document.getElementById('btn-pump-toggle');
+      const pumpBadge = document.getElementById('pump-status-badge');
+      const pumpLabel = document.getElementById('pump-btn-label');
+      const inflowStream = document.getElementById('inflow-water-stream');
+
+      if (systemState.pumpInlet) {
+        // Active ON State
+        btnPump.className = 'w-full py-3 px-4 rounded-xl font-bold text-sm tracking-wide transition-all duration-300 flex items-center justify-center gap-2 bg-gradient-to-r from-blue-600 to-cyan-500 text-white shadow-lg shadow-cyan-500/30 border border-cyan-400 active:scale-[0.98]';
+        pumpBadge.className = 'px-2.5 py-1 rounded-full text-xs font-mono font-bold bg-cyan-500/20 text-cyan-300 border border-cyan-400/50 led-glow-blue animate-pulse';
+        pumpBadge.textContent = 'ĐANG BƠM (ON)';
+        pumpLabel.textContent = 'DỪNG MÁY BƠM VÀO';
+        if (inflowStream) inflowStream.classList.remove('hidden');
+      } else {
+        // OFF State
+        btnPump.className = 'w-full py-3 px-4 rounded-xl font-bold text-sm tracking-wide transition-all duration-300 flex items-center justify-center gap-2 bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 active:scale-[0.98]';
+        pumpBadge.className = 'px-2.5 py-1 rounded-full text-xs font-mono font-bold bg-slate-800 text-slate-400 border border-slate-700';
+        pumpBadge.textContent = 'ĐANG TẮT';
+        pumpLabel.textContent = 'BẬT MÁY BƠM VÀO';
+        if (inflowStream) inflowStream.classList.add('hidden');
+      }
+
+      // DRAIN VALVE BUTTON & BADGE
+      const btnValve = document.getElementById('btn-valve-toggle');
+      const valveBadge = document.getElementById('valve-status-badge');
+      const valveLabel = document.getElementById('valve-btn-label');
+      const valveTimer = document.getElementById('valve-timer');
+
+      if (systemState.valveDrain) {
+        // Active OPEN State
+        btnValve.className = 'w-full py-3 px-4 rounded-xl font-bold text-sm tracking-wide transition-all duration-300 flex items-center justify-center gap-2 bg-gradient-to-r from-rose-600 to-amber-600 text-white shadow-lg shadow-rose-600/30 border border-rose-400 active:scale-[0.98]';
+        valveBadge.className = 'px-2.5 py-1 rounded-full text-xs font-mono font-bold bg-rose-500/20 text-rose-300 border border-rose-500/50 led-glow-red animate-pulse';
+        valveBadge.textContent = 'ĐANG XẢ (OPEN)';
+        valveLabel.textContent = 'ĐÓNG VAN XẢ RA';
+        if (valveTimer) valveTimer.textContent = 'Trạng thái: Đang xả nước';
+      } else {
+        // CLOSED State
+        btnValve.className = 'w-full py-3 px-4 rounded-xl font-bold text-sm tracking-wide transition-all duration-300 flex items-center justify-center gap-2 bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 active:scale-[0.98]';
+        valveBadge.className = 'px-2.5 py-1 rounded-full text-xs font-mono font-bold bg-slate-800 text-slate-400 border border-slate-700';
+        valveBadge.textContent = 'ĐANG ĐÓNG';
+        valveLabel.textContent = 'MỞ VAN XẢ RA';
+        if (valveTimer) valveTimer.textContent = 'Trạng thái: Khóa kín';
+      }
+
+      // AERATOR OXYGEN BUTTON & BADGE
+      const btnAerator = document.getElementById('btn-aerator-toggle');
+      const aeratorBadge = document.getElementById('aerator-status-badge');
+      const aeratorLabel = document.getElementById('aerator-btn-label');
+
+      if (systemState.aeratorOxygen) {
+        btnAerator.className = 'w-full py-3 px-4 rounded-xl font-bold text-sm tracking-wide transition-all duration-300 flex items-center justify-center gap-2 bg-teal-600 hover:bg-teal-500 text-white shadow-lg shadow-teal-600/20 active:scale-[0.98]';
+        aeratorBadge.className = 'px-2.5 py-1 rounded-full text-xs font-mono font-bold bg-teal-500/20 text-teal-400 border border-teal-500/40 led-glow-green';
+        aeratorBadge.textContent = 'ĐANG BẬT';
+        aeratorLabel.textContent = 'TẮT MÁY SỦI OXY';
+      } else {
+        btnAerator.className = 'w-full py-3 px-4 rounded-xl font-bold text-sm tracking-wide transition-all duration-300 flex items-center justify-center gap-2 bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 active:scale-[0.98]';
+        aeratorBadge.className = 'px-2.5 py-1 rounded-full text-xs font-mono font-bold bg-slate-800 text-slate-400 border border-slate-700';
+        aeratorBadge.textContent = 'ĐÃ DỪNG';
+        aeratorLabel.textContent = 'BẬT MÁY SỦI OXY';
+      }
+    }
+
+    // --- OPERATING MODE TOGGLE (AUTO / MANUAL) ---
+    const CONTROL_TOPIC = 'lab3/de4/aquarium_esp32/control';
+    function setSystemMode(newMode) {
+      systemState.mode = newMode;
+      const autoBtn = document.getElementById('mode-auto-btn');
+      const manualBtn = document.getElementById('mode-manual-btn');
+      const hint = document.getElementById('manual-mode-hint');
+
+      if (newMode === 'AUTO') {
+        autoBtn.className = 'px-4 py-1.5 rounded-lg text-xs font-bold transition-all duration-200 flex items-center gap-1.5 bg-cyan-500 text-ocean-950 shadow-md shadow-cyan-500/20';
+        manualBtn.className = 'px-4 py-1.5 rounded-lg text-xs font-bold text-slate-400 hover:text-white transition-all duration-200 flex items-center gap-1.5';
+        if (hint) hint.classList.add('hidden');
+        logMessage(`[MODE] Đã kích hoạt chế độ TỰ ĐỘNG (AUTO). ESP32 tự quản lý relay theo ngưỡng.`, 'text-cyan-300');
+        publishMQTT(CONTROL_TOPIC, JSON.stringify({ mode: 'AUTO' }));
+      } else {
+        manualBtn.className = 'px-4 py-1.5 rounded-lg text-xs font-bold transition-all duration-200 flex items-center gap-1.5 bg-amber-500 text-ocean-950 shadow-md shadow-amber-500/20';
+        autoBtn.className = 'px-4 py-1.5 rounded-lg text-xs font-bold text-slate-400 hover:text-white transition-all duration-200 flex items-center gap-1.5';
+        if (hint) hint.classList.remove('hidden');
+        logMessage(`[MODE] Đã kích hoạt chế độ THỦ CÔNG (MANUAL). Người vận hành tự điều khiển nút.`, 'text-amber-300 font-bold');
+        publishMQTT(CONTROL_TOPIC, JSON.stringify({ mode: 'MANUAL' }));
+      }
+    }
+
+    // --- MANUAL CONTROLS CLICK HANDLERS ---
+    function togglePump() {
+      systemState.pumpInlet = !systemState.pumpInlet;
+      const command = systemState.pumpInlet ? 'ON' : 'OFF';
+      logMessage(`[CONTROL] Lệnh điều khiển Bơm Nước Vào: <strong>${command}</strong>`, systemState.pumpInlet ? 'text-cyan-300' : 'text-slate-400');
+      publishMQTT(CONTROL_TOPIC, JSON.stringify({ device: 'pump', state: command, timestamp: Date.now() }));
+      renderActuators();
+    }
+
+    function toggleValve() {
+      systemState.valveDrain = !systemState.valveDrain;
+      const command = systemState.valveDrain ? 'OPEN' : 'CLOSE';
+      logMessage(`[CONTROL] Lệnh điều khiển Van Xả Nước Ra: <strong>${command}</strong>`, systemState.valveDrain ? 'text-rose-400' : 'text-slate-400');
+      publishMQTT(CONTROL_TOPIC, JSON.stringify({ device: 'valve', state: command, timestamp: Date.now() }));
+      renderActuators();
+    }
+
+    function toggleAerator() {
+      systemState.aeratorOxygen = !systemState.aeratorOxygen;
+      const command = systemState.aeratorOxygen ? 'ON' : 'OFF';
+      logMessage(`[CONTROL] Lệnh điều khiển Máy Sủi Oxy: <strong>${command}</strong>`, systemState.aeratorOxygen ? 'text-teal-300' : 'text-slate-400');
+      publishMQTT(CONTROL_TOPIC, JSON.stringify({ device: 'aerator', state: command, timestamp: Date.now() }));
+      renderActuators();
+    }
+
+    function publishSampleControl() {
+      logMessage(`[MQTT PUB] Đang gửi gói ping tới thiết bị ESP32...`, 'text-cyan-400');
+      publishMQTT(CONTROL_TOPIC, JSON.stringify({ ping: true, client: 'AquaSense-Web' }));
+    }
+
+    // --- REALTIME CHART DATA PUSH ---
+    function appendChartData(waterVal, tempVal) {
+      const nowStr = new Date().toLocaleTimeString('vi-VN', { hour12: false, hour: '2-digit', minute:'2-digit', second:'2-digit' });
+
+      // Water Chart
+      if (waterChart.data.labels.length > 20) {
+        waterChart.data.labels.shift();
+        waterChart.data.datasets[0].data.shift();
+      }
+      waterChart.data.labels.push(nowStr);
+      waterChart.data.datasets[0].data.push(Number(waterVal).toFixed(2));
+      waterChart.update('none');
+
+      // Temp Chart
+      if (tempChart.data.labels.length > 20) {
+        tempChart.data.labels.shift();
+        tempChart.data.datasets[0].data.shift();
+      }
+      tempChart.data.labels.push(nowStr);
+      tempChart.data.datasets[0].data.push(Number(tempVal).toFixed(1));
+      tempChart.update('none');
+    }
+
+    // --- INCOMING TELEMETRY PROCESSOR ---
+    
+function processTelemetryPacket(data) {
+    try {
+        // Doc muc nuoc: chap nhan ca waterLevel va water_level
+        const waterLevel = data.waterLevel ?? data.water_level;
+
+        if (waterLevel !== undefined) {
+            systemState.waterLevel = Number(waterLevel);
+        }
+
+        // Doc khoang cach tu cam bien HC-SR04
+        if (data.distance !== undefined) {
+            systemState.distanceCm = Number(data.distance);
+        } else {
+            systemState.distanceCm = Math.max(
+                0,
+                (systemState.maxTankHeight - systemState.waterLevel) * 100
+            );
+        }
+
+        // Doc nhiet do DS18B20
+        if (data.temperature !== undefined) {
+            systemState.temperature = Number(data.temperature);
+        }
+
+        // Cap nhat trang thai thiet bi neu ESP32 co gui kem
+        if (data.pump_state !== undefined) {
+            systemState.pumpInlet =
+                data.pump_state === 'ON' || data.pump_state === true;
+        }
+
+        if (data.valve_state !== undefined) {
+            systemState.valveDrain =
+                data.valve_state === 'OPEN' || data.valve_state === true;
+        }
+
+        if (data.aerator_state !== undefined) {
+            systemState.aeratorOxygen =
+                data.aerator_state === 'ON' || data.aerator_state === true;
+        }
+
+        // Cap nhat giao dien
+        updateDashboardUI();
+
+        // Cap nhat bieu do
+        appendChartData(
+            systemState.waterLevel,
+            systemState.temperature
+        );
+
+        // Dem so ban tin nhan duoc
+        systemState.packetCount++;
+
+        const counterEl = document.getElementById('packet-counter');
+
+        if (counterEl) {
+            counterEl.textContent = systemState.packetCount;
+        }
+
+    } catch (err) {
+        console.error('Error processing packet:', err);
+        logMessage(`[DATA ERROR] ${err.message}`, 'text-rose-400');
+      } 
+    }
+
+
+    // --- MANUAL TELEMETRY MOCK FOR TESTING ---
+    function simulateTelemetryPacket() {
+      // Simulate realistic fluctuation: if pump is on, water goes up; if valve is open, water goes down
+      let nextLevel = systemState.waterLevel;
+      if (systemState.pumpInlet) {
+        nextLevel += 0.05;
+      } else if (systemState.valveDrain) {
+        nextLevel -= 0.06;
+      } else {
+        nextLevel += (Math.random() - 0.49) * 0.03;
+      }
+      nextLevel = Math.max(0.3, Math.min(1.95, nextLevel));
+
+      const nextTemp = 27.2 + Math.random() * 1.4;
+
+      const mockData = {
+        device_id: 'ESP32_AQUA_01',
+        water_level: Number(nextLevel.toFixed(2)),
+        temperature: Number(nextTemp.toFixed(1)),
+        distance_cm: Number(((2.0 - nextLevel) * 100).toFixed(1)),
+        pump_state: systemState.pumpInlet ? 'ON' : 'OFF',
+        valve_state: systemState.valveDrain ? 'OPEN' : 'CLOSE',
+        aerator_state: systemState.aeratorOxygen ? 'ON' : 'OFF',
+        uptime_sec: 14205,
+        rssi: -62
+      };
+
+      logMessage(`[TELEMETRY RECV] lab3/de4/aquarium_esp32/sensor &rarr; ${JSON.stringify(mockData)}`, 'text-cyan-200');
+      processTelemetryPacket(mockData);
+    }
+
+    // Run periodic simulation tick every 3.5s to ensure charts and visual tank are always vivid
+    //setInterval(() => {
+      // Small continuous sensor noise
+    //  simulateTelemetryPacket();
+    //}, 3500);
+
+    // --- MQTT.JS INTEGRATION ---
+    let mqttClient = null;
+
+    function initMQTTClient() {
+      const host = document.getElementById('mqtt-host-input').value.trim() || 'broker.emqx.io';
+      const port = document.getElementById('mqtt-port-input').value.trim() || '8084';
+      const path = document.getElementById('mqtt-path-input').value.trim() || '/mqtt';
+      const clientId = 'AquaSense_Web_' + Math.random().toString(16).substring(2, 10);
+      const connectUrl = `wss://${host}:${port}${path}`;
+
+      const statusDot = document.getElementById('mqtt-status-dot');
+      const statusText = document.getElementById('mqtt-status-text');
+
+      logMessage(`[MQTT] Đang kết nối tới ${connectUrl}...`, 'text-slate-400');
+      if (statusText) statusText.textContent = 'Đang kết nối...';
+      if (statusDot) statusDot.className = 'w-2.5 h-2.5 rounded-full bg-amber-400 led-glow-amber animate-pulse';
+
+      try {
+        if (mqttClient) {
+          mqttClient.end(true);
+        }
+
+        mqttClient = mqtt.connect(connectUrl, {
+          clientId: clientId,
+          clean: true,
+          connectTimeout: 7000,
+          reconnectPeriod: 6000,
+        });
+
+        mqttClient.on('connect', () => {
+          systemState.mqttConnected = true;
+          logMessage(`[MQTT] ĐÃ KẾT NỐI THÀNH CÔNG tới Broker ${host}:${port}! ClientID: ${clientId}`, 'text-emerald-400 font-bold');
+          if (statusText) statusText.textContent = 'Đã kết nối';
+          if (statusDot) statusDot.className = 'w-2.5 h-2.5 rounded-full bg-emerald-400 led-glow-green';
+
+          // Subscribe to telemetry and control status topics
+          const subTopic = 'lab3/de4/aquarium_esp32/sensor';
+          mqttClient.subscribe(subTopic, (err) => {
+            if (!err) {
+              logMessage(`[MQTT SUB] Đã đăng ký lắng nghe topic: <strong>${subTopic}</strong>`, 'text-cyan-300');
+            } else {
+              logMessage(`[MQTT ERR] Lỗi đăng ký topic: ${err}`, 'text-rose-400');
+            }
+          });
+        });
+
+        mqttClient.on('message', (topic, message) => {
+          const msgStr = message.toString();
+          logMessage(`[MQTT IN &lt; ${topic}] ${msgStr}`, 'text-cyan-200');
+          try {
+            const parsed = JSON.parse(msgStr);
+            processTelemetryPacket(parsed);
+          } catch(e) {
+            logMessage(`[DATA WARN] Dữ liệu không phải JSON: ${msgStr}`, 'text-amber-400');
+          }
+        });
+
+        mqttClient.on('error', (err) => {
+          logMessage(`[MQTT ERROR] ${err.message}`, 'text-rose-400');
+          if (statusText) statusText.textContent = 'Lỗi kết nối';
+          if (statusDot) statusDot.className = 'w-2.5 h-2.5 rounded-full bg-rose-500 led-glow-red';
+        });
+
+        mqttClient.on('offline', () => {
+          logMessage(`[MQTT OFFLINE] Mất kết nối tới broker. Sẽ tự động kết nối lại...`, 'text-amber-400');
+          if (statusText) statusText.textContent = 'Mất kết nối';
+          if (statusDot) statusDot.className = 'w-2.5 h-2.5 rounded-full bg-amber-400 led-glow-amber animate-pulse';
+        });
+
+      } catch (err) {
+        logMessage(`[MQTT EXCEPTION] ${err.message}`, 'text-rose-400');
+      }
+    }
+
+    function publishMQTT(topic, payload) {
+      if (mqttClient && mqttClient.connected) {
+        mqttClient.publish(topic, payload, { qos: 0 }, (err) => {
+          if (err) {
+            logMessage(`[MQTT PUB ERR] Lỗi gửi ${topic}: ${err}`, 'text-rose-400');
+          } else {
+            logMessage(`[MQTT PUB &gt; ${topic}] ${payload}`, 'text-emerald-300');
+          }
+        });
+      } else {
+        logMessage(`[MQTT LOCAL] Broker chưa kết nối WSS, lệnh thực thi giả lập cục bộ.`, 'text-slate-400');
+      }
+    }
+
+    function reconnectMQTT() {
+      initMQTTClient();
+    }
+
+    // Initialize UI on load
+    updateDashboardUI();
+    initMQTTClient();
+  </script>
+</body>
+</html>
